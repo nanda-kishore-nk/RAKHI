@@ -111,6 +111,84 @@
 
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+    function createSyntheticVideoStream(label = "Partner") {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      
+      let angle = 0;
+      let handX = 320;
+      let handY = 280;
+
+      const drawFrame = () => {
+        angle += 0.03;
+        handX = 320 + Math.sin(angle) * 80;
+        handY = 280 + Math.cos(angle * 0.7) * 40;
+
+        // Dynamic gradient background mimicking camera light
+        const bgGrad = ctx.createLinearGradient(0, 0, 640, 480);
+        bgGrad.addColorStop(0, '#111b21');
+        bgGrad.addColorStop(1, '#0b141a');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, 640, 480);
+
+        // Soft ambient room light
+        ctx.fillStyle = 'rgba(212, 175, 55, 0.08)';
+        ctx.beginPath();
+        ctx.arc(320, 240, 200 + Math.sin(angle) * 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Simulated Person Head/Shoulders Silhouette
+        ctx.fillStyle = '#1e2c34';
+        ctx.beginPath();
+        ctx.arc(320, 160, 65, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(320, 360, 140, 100, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Simulated Forearm & Hand moving for MediaPipe Wrist Tracking
+        ctx.save();
+        ctx.translate(handX, handY);
+        ctx.rotate(Math.sin(angle) * 0.2);
+        
+        // Forearm skin tone
+        ctx.fillStyle = '#dca074';
+        ctx.beginPath();
+        ctx.roundRect(-25, 0, 50, 160, 20);
+        ctx.fill();
+
+        // Hand Palm & Wrist joint landmark
+        ctx.beginPath();
+        ctx.arc(0, 0, 28, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Fingers extended
+        [-18, -6, 6, 18].forEach(fx => {
+          ctx.beginPath();
+          ctx.roundRect(fx - 4, -45, 9, 40, 5);
+          ctx.fill();
+        });
+
+        ctx.restore();
+
+        // Label Tag
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(15, 15, 180, 32);
+        ctx.fillStyle = '#00a884';
+        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.fillText(`● LIVE FEED: ${label}`, 25, 36);
+      };
+
+      const timerId = setInterval(drawFrame, 1000 / 30);
+      const stream = canvas.captureStream(30);
+      
+      // Keep track of cleanup
+      stream.customCleanup = () => clearInterval(timerId);
+      return stream;
+    }
+
     async function generateAIRakhiImage(promptText) {
       const apiKey = ""; // Injected dynamically in supported environments
       if (!apiKey) return null;
@@ -271,17 +349,19 @@
           this.emit(type, payload);
         };
 
-        this.peerId = `rakhi-v3-${roomCode}-${role.toLowerCase()}`;
-        this.remotePeerId = `rakhi-v3-${roomCode}-${role === 'SISTER' ? 'brother' : 'sister'}`;
+        this.peerId = `rakhi-v4-${roomCode}-${role.toLowerCase()}`;
+        this.remotePeerId = `rakhi-v4-${roomCode}-${role === 'SISTER' ? 'brother' : 'sister'}`;
         
         try {
           if (window.Peer) {
             this.peer = new window.Peer(this.peerId, {
+              debug: 1,
               config: {
                 iceServers: [
                   { urls: 'stun:stun.l.google.com:19302' },
                   { urls: 'stun:stun1.l.google.com:19302' },
-                  { urls: 'stun:stun2.l.google.com:19302' }
+                  { urls: 'stun:stun2.l.google.com:19302' },
+                  { urls: 'stun:stun3.l.google.com:19302' }
                 ]
               }
             });
@@ -785,136 +865,148 @@
       };
 
       const startMediaAndConnect = async () => {
+        let stream = null;
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({
+          stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
             audio: true
           });
-          setLocalStream(stream);
+        } catch (e) {
+          console.warn("Camera fallback active:", e);
+          stream = createSyntheticVideoStream(userName || role || "You");
+          showToast('Using high-quality synthetic video camera feed', 'info');
+        }
 
-          const bus = new SignalBus(roomCode, role);
-          signalBusRef.current = bus;
+        setLocalStream(stream);
 
-          const pc = new RTCPeerConnection({
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' }
-            ]
-          });
-          peerConnectionRef.current = pc;
+        const bus = new SignalBus(roomCode, role);
+        signalBusRef.current = bus;
 
-          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+          ]
+        });
+        peerConnectionRef.current = pc;
 
-          pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            setRemoteStream(event.streams[0]);
+            setPeerConnected(true);
+            showToast('Remote Video Stream Connected! 🎥', 'success');
+          }
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            bus.send('ICE_CANDIDATE', { candidate: event.candidate });
+          }
+        };
+
+        if (bus.peer) {
+          bus.peer.on('call', (call) => {
+            call.answer(stream);
+            call.on('stream', (remoteMediaStream) => {
+              setRemoteStream(remoteMediaStream);
               setPeerConnected(true);
-            }
-          };
-
-          pc.onicecandidate = (event) => {
-            if (event.candidate) {
-              bus.send('ICE_CANDIDATE', { candidate: event.candidate });
-            }
-          };
-
-          if (bus.peer) {
-            bus.peer.on('call', (call) => {
-              call.answer(stream);
-              call.on('stream', (remoteMediaStream) => {
-                setRemoteStream(remoteMediaStream);
-                setPeerConnected(true);
-              });
             });
+          });
 
-            if (role === 'BROTHER') {
-              setTimeout(() => {
-                try {
-                  const call = bus.peer.call(bus.remotePeerId, stream);
-                  if (call) {
-                    call.on('stream', (remoteMediaStream) => {
-                      setRemoteStream(remoteMediaStream);
-                      setPeerConnected(true);
-                    });
-                  }
-                } catch(e) {}
-              }, 1200);
+          if (role === 'BROTHER') {
+            setTimeout(() => {
+              try {
+                const call = bus.peer.call(bus.remotePeerId, stream);
+                if (call) {
+                  call.on('stream', (remoteMediaStream) => {
+                    setRemoteStream(remoteMediaStream);
+                    setPeerConnected(true);
+                  });
+                }
+              } catch(e) {}
+            }, 1200);
+          }
+        }
+
+        bus.send('JOIN_ANNOUNCE', { name: userName, role: role });
+
+        bus.on('JOIN_ANNOUNCE', async (data) => {
+          if (data.role !== role) {
+            setPeerConnected(true);
+            setPeerName(data.name);
+            setPeerRole(data.role);
+            showToast(`${data.name} (${data.role}) joined ceremony!`, 'success');
+            
+            bus.connectToRemotePeer();
+            bus.send('JOIN_ACK', { name: userName, role: role });
+
+            if (role === 'SISTER') {
+              try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                bus.send('SDP_OFFER', { offer });
+              } catch(err) {}
             }
           }
+        });
 
-          bus.send('JOIN_ANNOUNCE', { name: userName, role: role });
+        bus.on('JOIN_ACK', async (data) => {
+          if (data.role !== role) {
+            setPeerConnected(true);
+            setPeerName(data.name);
+            setPeerRole(data.role);
+            bus.connectToRemotePeer();
+          }
+        });
 
-          bus.on('JOIN_ANNOUNCE', async (data) => {
-            if (data.role !== role) {
-              setPeerConnected(true);
-              setPeerName(data.name);
-              setPeerRole(data.role);
-              showToast(`${data.name} (${data.role}) joined!`, 'success');
-              
-              bus.connectToRemotePeer();
-              bus.send('JOIN_ACK', { name: userName, role: role });
+        bus.on('SDP_OFFER', async (data) => {
+          try {
+            if (pc.signalingState !== 'stable') return;
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            bus.send('SDP_ANSWER', { answer });
+          } catch(err) {}
+        });
 
-              if (role === 'SISTER') {
-                try {
-                  const offer = await pc.createOffer();
-                  await pc.setLocalDescription(offer);
-                  bus.send('SDP_OFFER', { offer });
-                } catch(err) {}
-              }
+        bus.on('SDP_ANSWER', async (data) => {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          } catch(err) {}
+        });
+
+        bus.on('ICE_CANDIDATE', async (data) => {
+          try {
+            if (data.candidate) {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
             }
-          });
+          } catch(err) {}
+        });
 
-          bus.on('JOIN_ACK', async (data) => {
-            if (data.role !== role) {
-              setPeerConnected(true);
-              setPeerName(data.name);
-              setPeerRole(data.role);
-              bus.connectToRemotePeer();
-            }
-          });
+        bus.on('RAKHI_SELECTED', (data) => {
+          setSelectedRakhi(data);
+        });
 
-          bus.on('SDP_OFFER', async (data) => {
-            try {
-              if (pc.signalingState !== 'stable') return;
-              await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              bus.send('SDP_ANSWER', { answer });
-            } catch(err) {}
-          });
+        bus.on('RAKHI_TIED_EVENT', () => {
+          setRakhiTied(true);
+          triggerCelebrationEffects();
+        });
 
-          bus.on('SDP_ANSWER', async (data) => {
-            try {
-              await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } catch(err) {}
-          });
+        setView('ROOM_CALL');
+        startCallTimer();
+      };
 
-          bus.on('ICE_CANDIDATE', async (data) => {
-            try {
-              if (data.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-              }
-            } catch(err) {}
-          });
-
-          bus.on('RAKHI_SELECTED', (data) => {
-            setSelectedRakhi(data);
-          });
-
-          bus.on('RAKHI_TIED_EVENT', () => {
-            setRakhiTied(true);
-            triggerCelebrationEffects();
-          });
-
-          setView('ROOM_CALL');
-          startCallTimer();
-        } catch (e) {
-          console.warn("Camera active", e);
-          setView('ROOM_CALL');
-          startCallTimer();
-          showToast('Room initialized successfully', 'info');
-        }
+      const handleSimulatePartner = () => {
+        const partnerName = role === 'SISTER' ? 'Rahul (Brother)' : 'Priya (Sister)';
+        const simStream = createSyntheticVideoStream(partnerName);
+        setRemoteStream(simStream);
+        setPeerConnected(true);
+        setPeerName(partnerName);
+        setPeerRole(role === 'SISTER' ? 'BROTHER' : 'SISTER');
+        showToast(`Simulated Live Partner Video for ${partnerName}`, 'success');
       };
 
       const startCallTimer = () => {
@@ -933,6 +1025,11 @@
         stopCallTimer();
         if (localStream) {
           localStream.getTracks().forEach(t => t.stop());
+          if (localStream.customCleanup) localStream.customCleanup();
+        }
+        if (remoteStream) {
+          remoteStream.getTracks().forEach(t => t.stop());
+          if (remoteStream.customCleanup) remoteStream.customCleanup();
         }
         if (signalBusRef.current) {
           signalBusRef.current.close();
@@ -991,20 +1088,21 @@
 
       useEffect(() => {
         if (view === 'ROOM_CALL') {
+          const bindStreamToVideo = (videoElem, stream, isMuted) => {
+            if (!videoElem) return;
+            if (videoElem.srcObject !== stream) {
+              videoElem.srcObject = stream;
+            }
+            videoElem.muted = isMuted;
+            videoElem.play().catch(e => console.warn("Autoplay deferred:", e));
+          };
+
           if (role === 'SISTER') {
-            if (sisterVideoRef.current && localStream) {
-              sisterVideoRef.current.srcObject = localStream;
-            }
-            if (brotherVideoRef.current && remoteStream) {
-              brotherVideoRef.current.srcObject = remoteStream;
-            }
+            bindStreamToVideo(sisterVideoRef.current, localStream, true);
+            bindStreamToVideo(brotherVideoRef.current, remoteStream || localStream, false);
           } else if (role === 'BROTHER') {
-            if (brotherVideoRef.current && localStream) {
-              brotherVideoRef.current.srcObject = localStream;
-            }
-            if (sisterVideoRef.current && remoteStream) {
-              sisterVideoRef.current.srcObject = remoteStream;
-            }
+            bindStreamToVideo(brotherVideoRef.current, localStream, true);
+            bindStreamToVideo(sisterVideoRef.current, remoteStream, false);
           }
         }
       }, [view, role, localStream, remoteStream]);
@@ -1469,12 +1567,22 @@
                     </h3>
                     <p class="text-xs text-gray-300 flex items-center space-x-2">
                       <i class="fas fa-lock text-wa-green text-[10px]"></i>
-                      <span>End-to-End Encrypted • {formattedCallTimer}</span>
+                      <span>{peerConnected ? 'WebRTC Live Connected' : 'Waiting for Partner'} • {formattedCallTimer}</span>
                     </p>
                   </div>
                 </div>
 
-                <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-2 md:space-x-3">
+                  {!peerConnected && (
+                    <button
+                      onClick={handleSimulatePartner}
+                      class="px-3 py-1.5 rounded-full bg-wa-teal/80 hover:bg-wa-teal text-white border border-wa-green text-xs font-semibold shadow-lg transition flex items-center space-x-1.5 animate-pulse"
+                    >
+                      <i class="fas fa-user-plus"></i>
+                      <span>Simulate Partner Video</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setManualTrackMode(!manualTrackMode)}
                     class={`px-3 py-1.5 rounded-full border text-xs font-semibold transition flex items-center space-x-1.5 ${
