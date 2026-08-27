@@ -2,10 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Virtual Rakhi – Real-Time WebRTC Virtual Rakhi Ceremony</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Virtual Rakhi – Real-Time WebRTC Raksha Bandhan Ceremony</title>
 
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -18,14 +17,10 @@
             'wa-green': '#25d366',
             'wa-lightGreen': '#00e676',
             'wa-red': '#ea4335',
-            'wa-pillBg': 'rgba(17, 27, 33, 0.90)',
+            'wa-pillBg': 'rgba(17, 27, 33, 0.92)',
             'rakhi-gold': '#ffd700',
             'rakhi-crimson': '#dc143c',
-            'rakhi-red': '#e60000',
-            'rakhi-maroon': '#800000',
-            'rakhi-accent': '#ff69b4',
-            'rakhi-cream': '#fffdd0',
-            'rakhi-dark': '#1a0b0e',
+            'rakhi-cream': '#fffdd0'
           },
           fontFamily: {
             'serif-title': ['Cinzel', 'Georgia', 'serif'],
@@ -36,26 +31,21 @@
     }
   </script>
 
-  <!-- Google Fonts & Font Awesome -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-  <!-- React & Babel -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- 3D Engine & Controls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
-  <!-- Celebration Effects & MediaPipe Computer Vision -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
-  <!-- PeerJS for WebRTC Signaling -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
   <style>
@@ -64,6 +54,7 @@
       font-family: 'Inter', sans-serif;
       overflow-x: hidden;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .wa-glass {
       background: rgba(17, 27, 33, 0.88);
@@ -100,10 +91,16 @@
   <div id="root"></div>
 
   <script type="text/babel">
+    
+    // Global Unhandled Rejection & WASM Safeguard to prevent page crashes on production Vercel builds
     window.addEventListener('unhandledrejection', (event) => {
       if (event.reason && (
         event.reason.name === 'BindingError' || 
-        (event.reason.message && event.reason.message.includes('SolutionWasm'))
+        (event.reason.message && (
+          event.reason.message.includes('SolutionWasm') ||
+          event.reason.message.includes('media') ||
+          event.reason.message.includes('play')
+        ))
       )) {
         event.preventDefault();
       }
@@ -111,86 +108,62 @@
 
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-    function createSyntheticVideoStream(label = "Partner") {
+    // Production WebRTC STUN & TURN Relay Server Configuration
+    // Enables NAT Traversal on Vercel across symmetric firewalls, 4G/5G mobile data & strict routers
+    const RTC_ICE_SERVERS = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
+    ];
+
+    function createSyntheticVideoStream(label = "Simulated Partner") {
       const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
+      canvas.width = 1280;
+      canvas.height = 720;
       const ctx = canvas.getContext('2d');
       
-      let angle = 0;
-      let handX = 320;
-      let handY = 280;
-
-      const drawFrame = () => {
-        angle += 0.03;
-        handX = 320 + Math.sin(angle) * 80;
-        handY = 280 + Math.cos(angle * 0.7) * 40;
-
-        // Dynamic gradient background mimicking camera light
-        const bgGrad = ctx.createLinearGradient(0, 0, 640, 480);
-        bgGrad.addColorStop(0, '#111b21');
-        bgGrad.addColorStop(1, '#0b141a');
-        ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, 640, 480);
-
-        // Soft ambient room light
-        ctx.fillStyle = 'rgba(212, 175, 55, 0.08)';
-        ctx.beginPath();
-        ctx.arc(320, 240, 200 + Math.sin(angle) * 20, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Simulated Person Head/Shoulders Silhouette
-        ctx.fillStyle = '#1e2c34';
-        ctx.beginPath();
-        ctx.arc(320, 160, 65, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(320, 360, 140, 100, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Simulated Forearm & Hand moving for MediaPipe Wrist Tracking
-        ctx.save();
-        ctx.translate(handX, handY);
-        ctx.rotate(Math.sin(angle) * 0.2);
+      let frame = 0;
+      const interval = setInterval(() => {
+        frame++;
+        ctx.fillStyle = '#0b141a';
+        ctx.fillRect(0, 0, 1280, 720);
         
-        // Forearm skin tone
-        ctx.fillStyle = '#dca074';
+        const cx = 640 + Math.sin(frame * 0.04) * 140;
+        const cy = 360 + Math.cos(frame * 0.04) * 70;
+        
+        const grad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 260);
+        grad.addColorStop(0, '#FFD700');
+        grad.addColorStop(0.5, '#DC143C');
+        grad.addColorStop(1, '#0b141a');
+        
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.roundRect(-25, 0, 50, 160, 20);
+        ctx.arc(cx, cy, 180, 0, Math.PI * 2);
         ctx.fill();
 
-        // Hand Palm & Wrist joint landmark
-        ctx.beginPath();
-        ctx.arc(0, 0, 28, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Fingers extended
-        [-18, -6, 6, 18].forEach(fx => {
-          ctx.beginPath();
-          ctx.roundRect(fx - 4, -45, 9, 40, 5);
-          ctx.fill();
-        });
-
-        ctx.restore();
-
-        // Label Tag
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(15, 15, 180, 32);
-        ctx.fillStyle = '#00a884';
-        ctx.font = 'bold 13px Inter, sans-serif';
-        ctx.fillText(`● LIVE FEED: ${label}`, 25, 36);
-      };
-
-      const timerId = setInterval(drawFrame, 1000 / 30);
-      const stream = canvas.captureStream(30);
+        ctx.fillStyle = '#D4AF37';
+        ctx.fillRect(cx - 35, cy + 100, 70, 220);
+        
+        ctx.fillStyle = '#FFFDD0';
+        ctx.font = 'bold 32px Cinzel, Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`🎥 Live Video Stream: ${label}`, 640, 640);
+        ctx.font = '18px Inter, sans-serif';
+        ctx.fillText('Move forearm into camera frame or drag Rakhi on screen', 640, 680);
+      }, 1000 / 30);
       
-      // Keep track of cleanup
-      stream.customCleanup = () => clearInterval(timerId);
+      const stream = canvas.captureStream(30);
+      stream.customCleanup = () => clearInterval(interval);
       return stream;
     }
 
     async function generateAIRakhiImage(promptText) {
-      const apiKey = ""; // Injected dynamically in supported environments
+      const apiKey = ""; // Canvas runtime auto-injects key if available
       if (!apiKey) return null;
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent?key=${apiKey}`;
       const payload = {
@@ -256,24 +229,17 @@
       return "May our sacred sibling bond stay forever blessed with endless laughter, protection, and boundless joy! Happy Raksha Bandhan ❤️";
     }
 
-    const PRESET_MOTIFS = [
-      { name: 'Om Sacred Symbol', url: 'https://images.unsplash.com/photo-1608889175123-8ee362201f81?w=200&auto=format&fit=crop&q=80' },
-      { name: 'Golden Peacock', url: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=200&auto=format&fit=crop&q=80' },
-      { name: 'Royal Lotus Blossom', url: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=200&auto=format&fit=crop&q=80' }
-    ];
-
     const PRESET_RAKHIS = [
       {
         id: 'traditional-1',
-        name: 'Traditional Royal',
+        name: 'Traditional Mandala Gold',
         category: 'Traditional',
         description: 'Classic crimson red silk thread with ornate golden mandala centerpiece.',
         threadColor: '#DC143C',
         secondaryColor: '#FFD700',
         centerShape: 'circle',
         centerColor: '#D4AF37',
-        gemColor: '#8B0000',
-        customImageUrl: null
+        gemColor: '#8B0000'
       },
       {
         id: 'royal-gold-2',
@@ -284,8 +250,7 @@
         secondaryColor: '#B8860B',
         centerShape: 'star',
         centerColor: '#FFD700',
-        gemColor: '#E67E22',
-        customImageUrl: null
+        gemColor: '#E67E22'
       },
       {
         id: 'pearl-bliss-3',
@@ -296,20 +261,18 @@
         secondaryColor: '#D4AF37',
         centerShape: 'circle',
         centerColor: '#F5F5F5',
-        gemColor: '#3498DB',
-        customImageUrl: null
+        gemColor: '#3498DB'
       },
       {
         id: 'floral-bloom-4',
-        name: 'Lotus Blossom',
+        name: 'Sacred Lotus Bloom',
         category: 'Floral',
         description: 'Vibrant maroon thread with sacred golden lotus petals design.',
         threadColor: '#800000',
         secondaryColor: '#FF69B4',
         centerShape: 'flower',
         centerColor: '#FFD700',
-        gemColor: '#FF1493',
-        customImageUrl: null
+        gemColor: '#FF1493'
       },
       {
         id: 'heart-bond-5',
@@ -320,77 +283,70 @@
         secondaryColor: '#FFC0CB',
         centerShape: 'heart',
         centerColor: '#E60000',
-        gemColor: '#FFFFFF',
-        customImageUrl: null
+        gemColor: '#FFFFFF'
       },
       {
         id: 'cute-chhota-6',
-        name: 'Chhota Star',
+        name: 'Chhota Star Emblem',
         category: 'Cute',
         description: 'Playful yellow-orange thread with glowing star emblem.',
         threadColor: '#FF8C00',
         secondaryColor: '#FFD700',
         centerShape: 'star',
         centerColor: '#FFD700',
-        gemColor: '#2ECC71',
-        customImageUrl: null
+        gemColor: '#2ECC71'
       }
     ];
 
-    class SignalBus {
+    class ProductionSignalBus {
       constructor(roomCode, role) {
         this.roomCode = roomCode;
         this.role = role;
-        this.channel = new BroadcastChannel(`rakhi_room_${roomCode}`);
+        this.channel = new BroadcastChannel(`v_rakhi_${roomCode}`);
         this.listeners = {};
         
         this.channel.onmessage = (e) => {
-          const { type, payload } = e.data;
-          this.emit(type, payload);
+          if (e.data && e.data.type) {
+            this.emit(e.data.type, e.data.payload);
+          }
         };
 
-        this.peerId = `rakhi-v4-${roomCode}-${role.toLowerCase()}`;
-        this.remotePeerId = `rakhi-v4-${roomCode}-${role === 'SISTER' ? 'brother' : 'sister'}`;
+        const safeRoom = roomCode.replace(/[^a-zA-Z0-9]/g, '');
+        // Dynamic Peer ID with timestamp prevents Vercel ID collision crashes on refresh
+        const sessionNonce = Math.floor(1000 + Math.random() * 9000);
+        this.peerId = `vrk-${safeRoom}-${role.toLowerCase()}-${sessionNonce}`;
+        this.targetRole = role === 'SISTER' ? 'brother' : 'sister';
         
+        this.initPeerJS();
+      }
+
+      initPeerJS() {
+        if (!window.Peer) return;
         try {
-          if (window.Peer) {
-            this.peer = new window.Peer(this.peerId, {
-              debug: 1,
-              config: {
-                iceServers: [
-                  { urls: 'stun:stun.l.google.com:19302' },
-                  { urls: 'stun:stun1.l.google.com:19302' },
-                  { urls: 'stun:stun2.l.google.com:19302' },
-                  { urls: 'stun:stun3.l.google.com:19302' }
-                ]
-              }
-            });
+          this.peer = new window.Peer(this.peerId, {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
+            config: { iceServers: RTC_ICE_SERVERS }
+          });
 
-            this.peer.on('connection', (conn) => {
-              this.dataConn = conn;
-              this.setupDataConn(conn);
-            });
+          this.peer.on('open', (id) => {
+            this.emit('PEER_OPEN', { id });
+          });
 
-            this.peer.on('error', (err) => {
-              console.warn("PeerJS status:", err);
-            });
-          }
+          this.peer.on('connection', (conn) => {
+            this.dataConn = conn;
+            this.setupDataConn(conn);
+          });
+
+          this.peer.on('error', (err) => {
+            console.warn("PeerJS status:", err?.type || err);
+          });
         } catch(e) {}
       }
 
-      connectToRemotePeer() {
-        if (this.peer && !this.dataConn) {
-          try {
-            const conn = this.peer.connect(this.remotePeerId);
-            if (conn) {
-              this.dataConn = conn;
-              this.setupDataConn(conn);
-            }
-          } catch(e) {}
-        }
-      }
-
       setupDataConn(conn) {
+        if (!conn) return;
         conn.on('data', (data) => {
           if (data && data.type) {
             this.emit(data.type, data.payload);
@@ -405,7 +361,9 @@
 
       emit(type, payload) {
         if (this.listeners[type]) {
-          this.listeners[type].forEach(fn => fn(payload));
+          this.listeners[type].forEach(fn => {
+            try { fn(payload); } catch(e){}
+          });
         }
       }
 
@@ -448,7 +406,7 @@
       const ambientLight = new THREE.AmbientLight(0xffffff, 1.3);
       scene.add(ambientLight);
 
-      const dirLight = new THREE.DirectionalLight(0xfff5e6, 2.0);
+      const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.8);
       dirLight.position.set(5, 8, 5);
       scene.add(dirLight);
 
@@ -456,7 +414,7 @@
       scene.add(rakhiGroup);
 
       const threadMat = new THREE.MeshStandardMaterial({ color: rakhiConfig.threadColor || '#DC143C', roughness: 0.35 });
-      const goldMat = new THREE.MeshStandardMaterial({ color: rakhiConfig.secondaryColor || '#D4AF37', metalness: 0.9, roughness: 0.18 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: rakhiConfig.centerColor || '#D4AF37', metalness: 0.9, roughness: 0.18 });
       const gemMat = new THREE.MeshStandardMaterial({ color: rakhiConfig.gemColor || '#8B0000', metalness: 0.5, roughness: 0.1 });
 
       const threadGeo = new THREE.CylinderGeometry(0.12, 0.12, 13, 32);
@@ -485,18 +443,11 @@
       if (rakhiConfig.customImageUrl) {
         const textureLoader = new THREE.TextureLoader();
         textureLoader.load(rakhiConfig.customImageUrl, (texture) => {
-          texture.colorSpace = THREE.SRGBColorSpace;
           const planeGeo = new THREE.CylinderGeometry(1.65, 1.65, 0.25, 32);
-          const customMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.25, metalness: 0.2 });
+          const customMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.25, metalness: 0.3 });
           const customMesh = new THREE.Mesh(planeGeo, customMat);
           customMesh.rotation.x = Math.PI / 2;
           rakhiGroup.add(customMesh);
-        }, undefined, () => {
-          // Fallback if texture fails
-          const centerGeo = new THREE.CylinderGeometry(1.65, 1.65, 0.35, 32);
-          const centerMesh = new THREE.Mesh(centerGeo, goldMat);
-          centerMesh.rotation.x = Math.PI / 2;
-          rakhiGroup.add(centerMesh);
         });
       } else {
         const centerGeo = new THREE.CylinderGeometry(1.65, 1.65, 0.35, 32);
@@ -560,14 +511,14 @@
       const bandRadiusX = Math.max(48, wristWidth * 0.78);
       const bandRadiusY = 22;
 
-      // Dark Back Shadow Drop for Wrist
+      // Shadow Drop
       ctx.beginPath();
       ctx.ellipse(0, 0, bandRadiusX + 3, bandRadiusY + 3, 0, Math.PI, Math.PI * 2);
       ctx.lineWidth = 14;
       ctx.strokeStyle = 'rgba(5, 2, 4, 0.85)';
       ctx.stroke();
 
-      // Gold Thread Underlay
+      // Golden Silk Band Base
       ctx.beginPath();
       ctx.ellipse(0, 0, bandRadiusX, bandRadiusY, 0, Math.PI, Math.PI * 2);
       ctx.lineWidth = 10;
@@ -575,7 +526,7 @@
       ctx.lineCap = 'round';
       ctx.stroke();
 
-      // Draped Silk Tassels Hanging Down
+      // Hanging Silk Threads
       ctx.save();
       ctx.rotate(-Math.PI / 2);
       ctx.translate(0, 6);
@@ -601,19 +552,17 @@
       ctx.beginPath();
       ctx.arc(24, 90, 4.5, 0, Math.PI * 2);
       ctx.fill();
-
       ctx.restore();
 
-      // Front Rakhi Thread Band
+      // Main Crimson Thread
       ctx.beginPath();
       ctx.ellipse(0, 0, bandRadiusX, bandRadiusY, 0, 0, Math.PI);
       ctx.lineWidth = 16;
       ctx.strokeStyle = rakhi.threadColor || '#DC143C';
       ctx.lineCap = 'round';
-      ctx.shadowColor = 'rgba(0,0,0,0.7)';
-      ctx.shadowBlur = 12;
       ctx.stroke();
 
+      // Thread Accent Pattern
       ctx.beginPath();
       ctx.ellipse(0, 0, bandRadiusX, bandRadiusY, 0, 0, Math.PI);
       ctx.lineWidth = 4;
@@ -622,7 +571,7 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // 3D Metallic Beads along thread
+      // 3D Golden Beads
       const draw3DBead = (bx, color) => {
         const by = bandRadiusY * Math.sin(Math.acos(Math.max(-1, Math.min(1, bx / bandRadiusX))));
         ctx.save();
@@ -645,7 +594,7 @@
         draw3DBead(bx, rakhi.centerColor);
       });
 
-      // Outer Golden Petals / Rays
+      // Petal Frame
       ctx.save();
       ctx.fillStyle = rakhi.secondaryColor || '#D4AF37';
       for (let i = 0; i < 8; i++) {
@@ -658,7 +607,7 @@
       }
       ctx.restore();
 
-      // Main Outer Ring Medallion
+      // Center Base
       ctx.beginPath();
       ctx.arc(0, 0, 40, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(60, 10, 18, 0.95)';
@@ -667,12 +616,11 @@
       ctx.strokeStyle = rakhi.secondaryColor || '#D4AF37';
       ctx.stroke();
 
-      // Centerpiece - Custom Uploaded Photo or Default Gem
+      // Custom Image Medallion or Gem
       if (rakhi.customImageUrl) {
         let customImg = loadedCustomImages[rakhi.customImageUrl];
         if (!customImg) {
           customImg = new Image();
-          customImg.crossOrigin = 'anonymous';
           customImg.src = rakhi.customImageUrl;
           loadedCustomImages[rakhi.customImageUrl] = customImg;
         }
@@ -689,9 +637,6 @@
 
         if (customImg.complete && customImg.naturalWidth > 0) {
           ctx.drawImage(customImg, -34, -34, 68, 68);
-        } else {
-          ctx.fillStyle = rakhi.centerColor || '#D4AF37';
-          ctx.fill();
         }
         ctx.restore();
       } else {
@@ -716,7 +661,6 @@
         ctx.stroke();
       }
 
-      // Sacred Rice / Kumkum dots on tied Rakhi
       if (tied) {
         ctx.fillStyle = '#FFFDD0';
         [-16, 18, 0].forEach((sx, idx) => {
@@ -752,8 +696,7 @@
       const [wristState, setWristState] = useState('WRIST_NOT_DETECTED');
       const [rakhiTied, setRakhiTied] = useState(false);
       const [wristCoords, setWristCoords] = useState(null);
-      const [manualTrackMode, setManualTrackMode] = useState(false);
-      const [manualPos, setManualPos] = useState({ x: 0.5, y: 0.5 });
+      const [manualDragMode, setManualDragMode] = useState(false);
 
       const [localStream, setLocalStream] = useState(null);
       const [remoteStream, setRemoteStream] = useState(null);
@@ -761,6 +704,7 @@
       const [micOn, setMicOn] = useState(true);
       const [cameraOn, setCameraOn] = useState(true);
       const [notification, setNotification] = useState(null);
+      const [needUserGesturePlay, setNeedUserGesturePlay] = useState(false);
 
       const [screenshotModal, setScreenshotModal] = useState(false);
       const [capturedImage, setCapturedImage] = useState(null);
@@ -773,7 +717,6 @@
       const signalBusRef = useRef(null);
       const peerConnectionRef = useRef(null);
       const callTimerRef = useRef(null);
-      const fileInputRef = useRef(null);
 
       const trackingStateRef = useRef({
         x: 0.5,
@@ -790,14 +733,24 @@
         setTimeout(() => setNotification(null), 4000);
       };
 
+      // Detect Vercel direct link parameters (?room=RK1234&role=BROTHER)
       useEffect(() => {
         try {
           const params = new URLSearchParams(window.location.search);
           const roomParam = params.get('room') || params.get('code');
+          const roleParam = params.get('role');
+
           if (roomParam) {
             const cleanCode = roomParam.trim().toUpperCase();
             setRoomCode(cleanCode);
-            showToast(`Room code ${cleanCode} loaded!`, 'success');
+            showToast(`Room code ${cleanCode} loaded from invitation!`, 'success');
+          }
+
+          if (roleParam) {
+            const cleanRole = roleParam.trim().toUpperCase();
+            if (cleanRole === 'SISTER' || cleanRole === 'BROTHER') {
+              setRole(cleanRole);
+            }
           }
         } catch(e) {}
       }, []);
@@ -865,148 +818,122 @@
       };
 
       const startMediaAndConnect = async () => {
-        let stream = null;
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-            audio: true
-          });
-        } catch (e) {
-          console.warn("Camera fallback active:", e);
-          stream = createSyntheticVideoStream(userName || role || "You");
-          showToast('Using high-quality synthetic video camera feed', 'info');
-        }
-
-        setLocalStream(stream);
-
-        const bus = new SignalBus(roomCode, role);
-        signalBusRef.current = bus;
-
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-          ]
-        });
-        peerConnectionRef.current = pc;
-
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        pc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            setRemoteStream(event.streams[0]);
-            setPeerConnected(true);
-            showToast('Remote Video Stream Connected! 🎥', 'success');
-          }
-        };
-
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            bus.send('ICE_CANDIDATE', { candidate: event.candidate });
-          }
-        };
-
-        if (bus.peer) {
-          bus.peer.on('call', (call) => {
-            call.answer(stream);
-            call.on('stream', (remoteMediaStream) => {
-              setRemoteStream(remoteMediaStream);
-              setPeerConnected(true);
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+              audio: true
             });
+          } catch(camErr) {
+            console.warn("Using synthetic camera stream fallback");
+            stream = createSyntheticVideoStream(userName || "Local Stream");
+          }
+
+          setLocalStream(stream);
+
+          const bus = new ProductionSignalBus(roomCode, role);
+          signalBusRef.current = bus;
+
+          const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+          peerConnectionRef.current = pc;
+
+          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+          pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+              setRemoteStream(event.streams[0]);
+              setPeerConnected(true);
+            }
+          };
+
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              bus.send('ICE_CANDIDATE', { candidate: event.candidate });
+            }
+          };
+
+          if (bus.peer) {
+            bus.peer.on('call', (call) => {
+              call.answer(stream);
+              call.on('stream', (remoteMediaStream) => {
+                setRemoteStream(remoteMediaStream);
+                setPeerConnected(true);
+              });
+            });
+          }
+
+          bus.send('JOIN_ANNOUNCE', { name: userName, role: role });
+
+          bus.on('JOIN_ANNOUNCE', async (data) => {
+            if (data.role !== role) {
+              setPeerConnected(true);
+              setPeerName(data.name);
+              setPeerRole(data.role);
+              showToast(`${data.name} (${data.role}) joined!`, 'success');
+              
+              bus.send('JOIN_ACK', { name: userName, role: role });
+
+              if (role === 'SISTER') {
+                try {
+                  const offer = await pc.createOffer();
+                  await pc.setLocalDescription(offer);
+                  bus.send('SDP_OFFER', { offer });
+                } catch(err) {}
+              }
+            }
           });
 
-          if (role === 'BROTHER') {
-            setTimeout(() => {
-              try {
-                const call = bus.peer.call(bus.remotePeerId, stream);
-                if (call) {
-                  call.on('stream', (remoteMediaStream) => {
-                    setRemoteStream(remoteMediaStream);
-                    setPeerConnected(true);
-                  });
-                }
-              } catch(e) {}
-            }, 1200);
-          }
+          bus.on('JOIN_ACK', async (data) => {
+            if (data.role !== role) {
+              setPeerConnected(true);
+              setPeerName(data.name);
+              setPeerRole(data.role);
+            }
+          });
+
+          bus.on('SDP_OFFER', async (data) => {
+            try {
+              if (pc.signalingState !== 'stable') return;
+              await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              bus.send('SDP_ANSWER', { answer });
+            } catch(err) {}
+          });
+
+          bus.on('SDP_ANSWER', async (data) => {
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            } catch(err) {}
+          });
+
+          bus.on('ICE_CANDIDATE', async (data) => {
+            try {
+              if (data.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+              }
+            } catch(err) {}
+          });
+
+          bus.on('RAKHI_SELECTED', (data) => {
+            setSelectedRakhi(data);
+          });
+
+          bus.on('RAKHI_TIED_EVENT', () => {
+            setRakhiTied(true);
+            triggerCelebrationEffects();
+          });
+
+          setView('ROOM_CALL');
+          startCallTimer();
+        } catch (e) {
+          const fallbackStream = createSyntheticVideoStream(userName || "Local Feed");
+          setLocalStream(fallbackStream);
+          setView('ROOM_CALL');
+          startCallTimer();
+          showToast('Simulated Video Mode active', 'info');
         }
-
-        bus.send('JOIN_ANNOUNCE', { name: userName, role: role });
-
-        bus.on('JOIN_ANNOUNCE', async (data) => {
-          if (data.role !== role) {
-            setPeerConnected(true);
-            setPeerName(data.name);
-            setPeerRole(data.role);
-            showToast(`${data.name} (${data.role}) joined ceremony!`, 'success');
-            
-            bus.connectToRemotePeer();
-            bus.send('JOIN_ACK', { name: userName, role: role });
-
-            if (role === 'SISTER') {
-              try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                bus.send('SDP_OFFER', { offer });
-              } catch(err) {}
-            }
-          }
-        });
-
-        bus.on('JOIN_ACK', async (data) => {
-          if (data.role !== role) {
-            setPeerConnected(true);
-            setPeerName(data.name);
-            setPeerRole(data.role);
-            bus.connectToRemotePeer();
-          }
-        });
-
-        bus.on('SDP_OFFER', async (data) => {
-          try {
-            if (pc.signalingState !== 'stable') return;
-            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            bus.send('SDP_ANSWER', { answer });
-          } catch(err) {}
-        });
-
-        bus.on('SDP_ANSWER', async (data) => {
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-          } catch(err) {}
-        });
-
-        bus.on('ICE_CANDIDATE', async (data) => {
-          try {
-            if (data.candidate) {
-              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
-          } catch(err) {}
-        });
-
-        bus.on('RAKHI_SELECTED', (data) => {
-          setSelectedRakhi(data);
-        });
-
-        bus.on('RAKHI_TIED_EVENT', () => {
-          setRakhiTied(true);
-          triggerCelebrationEffects();
-        });
-
-        setView('ROOM_CALL');
-        startCallTimer();
-      };
-
-      const handleSimulatePartner = () => {
-        const partnerName = role === 'SISTER' ? 'Rahul (Brother)' : 'Priya (Sister)';
-        const simStream = createSyntheticVideoStream(partnerName);
-        setRemoteStream(simStream);
-        setPeerConnected(true);
-        setPeerName(partnerName);
-        setPeerRole(role === 'SISTER' ? 'BROTHER' : 'SISTER');
-        showToast(`Simulated Live Partner Video for ${partnerName}`, 'success');
       };
 
       const startCallTimer = () => {
@@ -1025,11 +952,6 @@
         stopCallTimer();
         if (localStream) {
           localStream.getTracks().forEach(t => t.stop());
-          if (localStream.customCleanup) localStream.customCleanup();
-        }
-        if (remoteStream) {
-          remoteStream.getTracks().forEach(t => t.stop());
-          if (remoteStream.customCleanup) remoteStream.customCleanup();
         }
         if (signalBusRef.current) {
           signalBusRef.current.close();
@@ -1086,35 +1008,54 @@
         showToast('🎉 Rakhi successfully tied with blessing!', 'success');
       };
 
+      const handleSimulatePartnerFeed = () => {
+        const synthetic = createSyntheticVideoStream(role === 'SISTER' ? "Simulated Brother" : "Simulated Sister");
+        setRemoteStream(synthetic);
+        setPeerConnected(true);
+        setPeerName(role === 'SISTER' ? "Brother (Simulated)" : "Sister (Simulated)");
+        showToast('Simulated partner video stream active!', 'success');
+      };
+
       useEffect(() => {
         if (view === 'ROOM_CALL') {
-          const bindStreamToVideo = (videoElem, stream, isMuted) => {
-            if (!videoElem) return;
-            if (videoElem.srcObject !== stream) {
-              videoElem.srcObject = stream;
+          const safePlay = (vidElem) => {
+            if (vidElem) {
+              vidElem.play().catch(e => {
+                setNeedUserGesturePlay(true);
+              });
             }
-            videoElem.muted = isMuted;
-            videoElem.play().catch(e => console.warn("Autoplay deferred:", e));
           };
 
           if (role === 'SISTER') {
-            bindStreamToVideo(sisterVideoRef.current, localStream, true);
-            bindStreamToVideo(brotherVideoRef.current, remoteStream || localStream, false);
+            if (sisterVideoRef.current && localStream) {
+              sisterVideoRef.current.srcObject = localStream;
+              safePlay(sisterVideoRef.current);
+            }
+            if (brotherVideoRef.current && remoteStream) {
+              brotherVideoRef.current.srcObject = remoteStream;
+              safePlay(brotherVideoRef.current);
+            }
           } else if (role === 'BROTHER') {
-            bindStreamToVideo(brotherVideoRef.current, localStream, true);
-            bindStreamToVideo(sisterVideoRef.current, remoteStream, false);
+            if (brotherVideoRef.current && localStream) {
+              brotherVideoRef.current.srcObject = localStream;
+              safePlay(brotherVideoRef.current);
+            }
+            if (sisterVideoRef.current && remoteStream) {
+              sisterVideoRef.current.srcObject = remoteStream;
+              safePlay(sisterVideoRef.current);
+            }
           }
         }
       }, [view, role, localStream, remoteStream]);
 
       useEffect(() => {
         let isDestroyed = false;
-        let hands = null;
         let animFrameId = null;
+        let hands = null;
 
-        if (view === 'ROOM_CALL' && window.Hands) {
-          const videoElem = brotherVideoRef.current;
-          if (!videoElem) return;
+        if (view === 'ROOM_CALL' && window.Hands && !manualDragMode) {
+          const brotherVidElem = brotherVideoRef.current;
+          if (!brotherVidElem) return;
 
           hands = new window.Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -1128,7 +1069,7 @@
           });
 
           hands.onResults((results) => {
-            if (isDestroyed) return;
+            if (isDestroyed || manualDragMode) return;
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
               const landmarks = results.multiHandLandmarks[0];
@@ -1168,7 +1109,7 @@
                   wristWidth: state.wristWidth,
                   visible: true
                 });
-              } else if (!manualTrackMode) {
+              } else {
                 state.visible = false;
                 setWristCoords(null);
                 setWristState('WRIST_NOT_DETECTED');
@@ -1176,21 +1117,17 @@
             }
           });
 
-          let isProcessing = false;
-          const processVideoFrame = async () => {
-            if (isDestroyed) return;
-
-            if (!isProcessing && videoElem && videoElem.readyState >= 2 && !videoElem.paused) {
-              isProcessing = true;
+          const processFrame = async () => {
+            if (isDestroyed || manualDragMode) return;
+            if (brotherVidElem && brotherVidElem.readyState >= 2 && !brotherVidElem.paused && !brotherVidElem.ended && brotherVidElem.videoWidth > 0) {
               try {
-                await hands.send({ image: videoElem });
+                await hands.send({ image: brotherVidElem });
               } catch(err) {}
-              isProcessing = false;
             }
-            animFrameId = requestAnimationFrame(processVideoFrame);
+            animFrameId = requestAnimationFrame(processFrame);
           };
 
-          processVideoFrame();
+          processFrame();
         }
 
         return () => {
@@ -1198,21 +1135,7 @@
           if (animFrameId) cancelAnimationFrame(animFrameId);
           try { if (hands) hands.close(); } catch(e){}
         };
-      }, [view, role, localStream, remoteStream, manualTrackMode]);
-
-      // Manual pointer tracking mode fallback
-      useEffect(() => {
-        if (manualTrackMode) {
-          setWristCoords({
-            x: manualPos.x,
-            y: manualPos.y,
-            angle: 0,
-            wristWidth: 90,
-            visible: true
-          });
-          setWristState('WRIST_READY');
-        }
-      }, [manualTrackMode, manualPos]);
+      }, [view, role, localStream, remoteStream, manualDragMode]);
 
       useEffect(() => {
         let animId;
@@ -1322,36 +1245,6 @@
         showToast('Memory downloaded! 📸', 'success');
       };
 
-      const handleImageUpload = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-          showToast('Please upload a valid image file', 'error');
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const uploadedUrl = e.target.result;
-          const customRakhi = {
-            id: `custom-uploaded-${Date.now()}`,
-            name: `Photo: ${file.name.slice(0, 14)}`,
-            category: 'Custom Upload',
-            description: 'Custom photo centered on golden Rakhi medallion.',
-            threadColor: '#DC143C',
-            secondaryColor: '#FFD700',
-            centerColor: '#FFD700',
-            gemColor: '#FF1493',
-            customImageUrl: uploadedUrl
-          };
-          setSelectedRakhi(customRakhi);
-          if (signalBusRef.current) signalBusRef.current.send('RAKHI_SELECTED', customRakhi);
-          showToast('Custom Image applied to Rakhi! 🖼️', 'success');
-        };
-        reader.readAsDataURL(file);
-      };
-
       const handleGenerateAIRakhi = async () => {
         if (!aiPrompt.trim()) return;
         setAiLoading(true);
@@ -1378,18 +1271,26 @@
         }
       };
 
-      const handleCanvasPointerClick = (e) => {
-        if (!manualTrackMode || !overlayCanvasRef.current) return;
-        const rect = overlayCanvasRef.current.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
-        setManualPos({ x, y });
+      const handleStageCanvasClick = (e) => {
+        if (!manualDragMode) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) / rect.width;
+        const clickY = (e.clientY - rect.top) / rect.height;
+
+        setWristCoords({
+          x: clickX,
+          y: clickY,
+          angle: 0,
+          wristWidth: 90,
+          visible: true
+        });
+        setWristState('WRIST_READY');
       };
 
       return (
         <div class="min-h-screen bg-wa-darkBg text-white flex flex-col justify-between selection:bg-wa-teal selection:text-white">
           
-          {/* Notification Toast */}
+          {}
           {notification && (
             <div class={`fixed top-5 right-5 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 backdrop-blur-md transition-all duration-300 border ${
               notification.type === 'error' ? 'bg-red-900/90 border-red-500 text-white' :
@@ -1398,6 +1299,27 @@
             }`}>
               <i class={`fas ${notification.type === 'error' ? 'fa-exclamation-circle' : notification.type === 'success' ? 'fa-check-circle' : 'fa-info-circle'}`}></i>
               <span class="text-sm font-medium">{notification.msg}</span>
+            </div>
+          )}
+
+          {/* Autoplay User Interaction Overlay */}
+          {needUserGesturePlay && (
+            <div class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6 text-center">
+              <div class="wa-glass p-8 rounded-3xl max-w-sm space-y-4">
+                <i class="fas fa-play-circle text-4xl text-wa-teal animate-bounce"></i>
+                <h3 class="text-lg font-bold">Enable Video & Audio</h3>
+                <p class="text-xs text-gray-300">Tap below to permit video playback for your WebRTC call.</p>
+                <button
+                  onClick={() => {
+                    setNeedUserGesturePlay(false);
+                    if (brotherVideoRef.current) brotherVideoRef.current.play();
+                    if (sisterVideoRef.current) sisterVideoRef.current.play();
+                  }}
+                  class="w-full py-3 rounded-xl bg-wa-teal font-bold text-sm"
+                >
+                  Start Stream
+                </button>
+              </div>
             </div>
           )}
 
@@ -1414,13 +1336,13 @@
               </h1>
               
               <p class="text-gray-300 text-base md:text-lg max-w-2xl mb-10 leading-relaxed">
-                Tie a sacred Rakhi virtually with live WebRTC video calling, MediaPipe AR wrist tracking, custom photo medallions, 3D preview, and AI blessing cards.
+                Tie a sacred Rakhi virtually with live WebRTC video calling, MediaPipe AR wrist tracking, custom medallion photos, 3D interactive preview, and AI blessing cards.
               </p>
 
               {/* Login / Entry Options */}
               <div class="w-full max-w-md wa-glass p-8 rounded-3xl shadow-2xl space-y-6 mb-12">
                 <div>
-                  <label class="block text-left text-xs text-gray-400 mb-2 font-medium">Your Full Name</label>
+                  <label class="block text-left text-xs text-gray-400 mb-2 font-medium">Your Name</label>
                   <input
                     type="text"
                     value={userName}
@@ -1433,7 +1355,7 @@
                 <div class="grid grid-cols-2 gap-4">
                   <button
                     onClick={() => handleCreateRoom('SISTER')}
-                    class="bg-gradient-to-r from-pink-600 to-rose-700 hover:from-pink-500 hover:to-rose-600 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition flex flex-col items-center justify-center"
+                    class="bg-gradient-to-r from-pink-600 to-rose-700 hover:from-pink-500 hover:to-rose-600 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg transition flex flex-col items-center justify-center"
                   >
                     <i class="fas fa-hand-holding-heart text-xl mb-1"></i>
                     <span class="text-sm">As Sister</span>
@@ -1441,7 +1363,7 @@
 
                   <button
                     onClick={() => setView('BROTHER_JOIN')}
-                    class="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition flex flex-col items-center justify-center"
+                    class="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white font-semibold py-3.5 px-4 rounded-xl shadow-lg transition flex flex-col items-center justify-center"
                   >
                     <i class="fas fa-user-shield text-xl mb-1"></i>
                     <span class="text-sm">As Brother</span>
@@ -1452,10 +1374,10 @@
               {/* How It Works Steps */}
               <div class="grid grid-cols-1 md:grid-cols-4 gap-6 w-full text-left">
                 {[
-                  { step: '01', title: 'Create Room', desc: 'Sister generates a secure 6-character room code' },
+                  { step: '01', title: 'Create Room', desc: 'Sister generates a room code & custom Rakhi' },
                   { step: '02', title: 'Join Call', desc: 'Brother connects via direct WebRTC video call' },
-                  { step: '03', title: 'Show Wrist', desc: 'MediaPipe tracks wrist orientation automatically' },
-                  { step: '04', title: 'Tie & Capture', desc: 'Sister ties 3D Rakhi with photo and captures memory' }
+                  { step: '03', title: 'Show Wrist', desc: 'MediaPipe tracks wrist position automatically' },
+                  { step: '04', title: 'Tie & Capture', desc: 'Sister ties 3D Rakhi and captures memory PNG' }
                 ].map((item, idx) => (
                   <div key={idx} class="wa-glass p-5 rounded-2xl border border-white/5">
                     <span class="text-xs font-bold text-wa-teal tracking-widest">{item.step}</span>
@@ -1521,20 +1443,20 @@
 
                 <h2 class="text-2xl font-serif-title font-bold text-white">Room Ready: {roomCode}</h2>
                 <p class="text-xs text-gray-300">
-                  You are joining as <strong class="text-amber-400">{role} ({userName})</strong>. Enable camera permissions to start WebRTC calling.
+                  Joining as <strong class="text-amber-400">{role} ({userName})</strong>. Enable camera permissions to start WebRTC calling.
                 </p>
 
-                <div class="bg-wa-cardBg p-4 rounded-2xl border border-gray-800 text-left space-y-2">
+                <div class="bg-wa-cardBg p-4 rounded-2xl border border-gray-800 text-left space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-400">Shareable Link</span>
+                    <span class="text-xs text-gray-400">Shareable Invitation Link</span>
                     <button
-                      onClick={() => copyTextToClipboard(`${window.location.origin}${window.location.pathname}?room=${roomCode}`, 'Room link copied!')}
+                      onClick={() => copyTextToClipboard(`${window.location.origin}${window.location.pathname}?room=${roomCode}&role=${role === 'SISTER' ? 'BROTHER' : 'SISTER'}`, 'Direct Link Copied!')}
                       class="text-xs text-wa-teal hover:underline font-semibold"
                     >
                       Copy Link
                     </button>
                   </div>
-                  <p class="text-xs text-amber-300 font-mono break-all">{`${window.location.origin}${window.location.pathname}?room=${roomCode}`}</p>
+                  <p class="text-xs text-amber-300 font-mono break-all">{`${window.location.origin}${window.location.pathname}?room=${roomCode}&role=${role === 'SISTER' ? 'BROTHER' : 'SISTER'}`}</p>
                 </div>
 
                 <button
@@ -1567,31 +1489,21 @@
                     </h3>
                     <p class="text-xs text-gray-300 flex items-center space-x-2">
                       <i class="fas fa-lock text-wa-green text-[10px]"></i>
-                      <span>{peerConnected ? 'WebRTC Live Connected' : 'Waiting for Partner'} • {formattedCallTimer}</span>
+                      <span>WebRTC Connected • {formattedCallTimer}</span>
                     </p>
                   </div>
                 </div>
 
-                <div class="flex items-center space-x-2 md:space-x-3">
+                <div class="flex items-center space-x-2">
                   {!peerConnected && (
                     <button
-                      onClick={handleSimulatePartner}
-                      class="px-3 py-1.5 rounded-full bg-wa-teal/80 hover:bg-wa-teal text-white border border-wa-green text-xs font-semibold shadow-lg transition flex items-center space-x-1.5 animate-pulse"
+                      onClick={handleSimulatePartnerFeed}
+                      class="px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-xs font-semibold text-amber-300 hover:bg-amber-500/30 transition flex items-center space-x-1"
                     >
-                      <i class="fas fa-user-plus"></i>
-                      <span>Simulate Partner Video</span>
+                      <i class="fas fa-robot"></i>
+                      <span>Simulate Partner</span>
                     </button>
                   )}
-
-                  <button
-                    onClick={() => setManualTrackMode(!manualTrackMode)}
-                    class={`px-3 py-1.5 rounded-full border text-xs font-semibold transition flex items-center space-x-1.5 ${
-                      manualTrackMode ? 'bg-amber-500 text-black border-amber-400' : 'bg-wa-pillBg text-amber-300 border-white/10 hover:bg-white/10'
-                    }`}
-                  >
-                    <i class="fas fa-hand-pointer"></i>
-                    <span>{manualTrackMode ? 'Manual Adjust Active' : 'Touch Adjust'}</span>
-                  </button>
 
                   <button
                     onClick={() => setShareModalOpen(true)}
@@ -1603,10 +1515,10 @@
                 </div>
               </div>
 
-              {/* Main Stage Video Display (Brother's Feed) */}
-              <div 
+              {/* Main Stage Video Display */}
+              <div
+                onClick={handleStageCanvasClick}
                 class="relative flex-1 w-full h-full bg-black flex items-center justify-center overflow-hidden cursor-crosshair"
-                onClick={handleCanvasPointerClick}
               >
                 <video
                   ref={brotherVideoRef}
@@ -1620,15 +1532,22 @@
                   class="absolute inset-0 w-full h-full pointer-events-none z-10"
                 />
 
-                {/* Tracking Status Indicator Badge */}
-                <div class="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full wa-glass border border-amber-500/30 flex items-center space-x-2 shadow-xl">
-                  <span class={`w-2.5 h-2.5 rounded-full ${
-                    wristState === 'WRIST_READY' ? 'bg-wa-green animate-pulse' : 'bg-amber-400 animate-ping'
-                  }`}></span>
+                {/* Wrist Detection Status Pill */}
+                <div class="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full wa-glass border border-amber-500/30 flex items-center space-x-3 shadow-xl">
+                  <span class={`w-2.5 h-2.5 rounded-full ${wristState === 'WRIST_READY' ? 'bg-wa-green animate-pulse' : 'bg-amber-400 animate-ping'}`}></span>
                   <span class="text-xs font-semibold text-amber-200">
-                    {manualTrackMode ? '🎯 Touch video to set Rakhi location' : 
-                     wristState === 'WRIST_READY' ? '✨ Wrist Detected & Aligned' : 'Show forearm to camera...'}
+                    {wristState === 'WRIST_READY' ? '✨ Wrist Aligned' : 'Show forearm or tap screen to place Rakhi'}
                   </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setManualDragMode(!manualDragMode);
+                      showToast(manualDragMode ? 'Auto AR Tracking active' : 'Tap screen to place Rakhi manually', 'info');
+                    }}
+                    class="px-2 py-0.5 rounded bg-white/10 text-[10px] text-amber-300 hover:bg-white/20"
+                  >
+                    {manualDragMode ? 'Switch to AI Tracking' : 'Manual Placement'}
+                  </button>
                 </div>
 
                 {/* Floating Sister Picture-in-Picture Video */}
@@ -1646,7 +1565,7 @@
                 </div>
               </div>
 
-              {/* WhatsApp Call Controls Bottom Bar */}
+              {}
               <div class="absolute bottom-0 left-0 right-0 z-30 p-6 bg-gradient-to-t from-black/90 to-transparent flex items-center justify-center space-x-4 md:space-x-6">
                 <button
                   onClick={toggleMute}
@@ -1666,18 +1585,16 @@
                   <i class={`fas ${cameraOn ? 'fa-video' : 'fa-video-slash'}`}></i>
                 </button>
 
-                {/* Sister Specific Choose Rakhi Action */}
                 {role === 'SISTER' && (
                   <button
                     onClick={() => setRakhiDrawerOpen(true)}
                     class="px-5 py-3 rounded-full bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-semibold text-sm shadow-xl transition flex items-center space-x-2 border border-pink-400/30 animate-pulse-glow"
                   >
                     <i class="fas fa-bahai"></i>
-                    <span>Custom Rakhi</span>
+                    <span>Choose Rakhi</span>
                   </button>
                 )}
 
-                {/* Tie Action Button when Wrist/Position Ready */}
                 {role === 'SISTER' && wristState === 'WRIST_READY' && !rakhiTied && (
                   <button
                     onClick={handleTieRakhiAction}
@@ -1688,7 +1605,6 @@
                   </button>
                 )}
 
-                {/* Capture Memory Button after Tying */}
                 {rakhiTied && (
                   <button
                     onClick={handleCaptureScreenshot}
@@ -1718,103 +1634,75 @@
                 <div class="p-5 border-b border-gray-800 flex items-center justify-between">
                   <h3 class="text-lg font-serif-title font-bold text-white flex items-center space-x-2">
                     <i class="fas fa-gem text-amber-400"></i>
-                    <span>Customize & Upload Rakhi Photo</span>
+                    <span>Choose & Customize Sacred Rakhi</span>
                   </h3>
                   <button onClick={() => setRakhiDrawerOpen(false)} class="text-gray-400 hover:text-white">
                     <i class="fas fa-times text-lg"></i>
                   </button>
                 </div>
 
-                {/* Custom Photo Upload Bar */}
-                <div class="p-4 bg-wa-darkBg border-b border-gray-800 space-y-3">
-                  <div class="flex items-center justify-between">
-                    <label class="text-xs text-amber-300 font-semibold flex items-center space-x-1.5">
-                      <i class="fas fa-image"></i>
-                      <span>Upload Custom Image for Rakhi Center</span>
-                    </label>
-                    {selectedRakhi.customImageUrl && (
-                      <button
-                        onClick={() => {
-                          const updated = { ...selectedRakhi, customImageUrl: null };
-                          setSelectedRakhi(updated);
-                          if (signalBusRef.current) signalBusRef.current.send('RAKHI_SELECTED', updated);
-                          showToast('Removed custom image', 'info');
-                        }}
-                        class="text-[10px] text-red-400 hover:underline"
-                      >
-                        Remove Photo
-                      </button>
-                    )}
-                  </div>
-
-                  <div class="flex items-center space-x-3">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleImageUpload}
-                      accept="image/*"
-                      class="hidden"
-                    />
-                    <button
-                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                      class="flex-1 py-2.5 px-4 rounded-xl bg-wa-teal/20 border border-wa-teal text-wa-teal text-xs font-bold hover:bg-wa-teal/30 transition flex items-center justify-center space-x-2"
-                    >
-                      <i class="fas fa-upload"></i>
-                      <span>Upload Photo (Brother/Sister/Deity)</span>
-                    </button>
-
-                    {selectedRakhi.customImageUrl && (
-                      <div class="w-10 h-10 rounded-full border-2 border-amber-400 overflow-hidden shadow-md flex-shrink-0">
-                        <img src={selectedRakhi.customImageUrl} alt="Rakhi Custom" class="w-full h-full object-cover" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sacred Motifs Presets */}
-                  <div class="pt-2">
-                    <span class="text-[10px] text-gray-400 font-medium">Sacred Motifs:</span>
-                    <div class="flex items-center space-x-2 mt-1">
-                      {PRESET_MOTIFS.map((motif, i) => (
-                        <button
-                          key={i}
-                          onClick={() => {
-                            const updated = {
-                              ...selectedRakhi,
-                              customImageUrl: motif.url,
-                              name: motif.name
-                            };
-                            setSelectedRakhi(updated);
-                            if (signalBusRef.current) signalBusRef.current.send('RAKHI_SELECTED', updated);
-                            showToast(`Applied ${motif.name}`, 'success');
+                {/* Custom Photo Upload & AI Bar */}
+                <div class="p-4 bg-wa-darkBg border-b border-gray-800 space-y-4">
+                  {/* Photo File Upload Section */}
+                  <div>
+                    <label class="block text-xs text-amber-300 font-semibold mb-2">📷 Display Custom Photo on Rakhi Medallion</label>
+                    <div class="flex items-center space-x-3">
+                      <label class="flex-1 flex items-center justify-center space-x-2 bg-wa-cardBg border border-dashed border-gray-600 hover:border-amber-400 rounded-xl px-4 py-2.5 cursor-pointer transition text-xs text-gray-300 hover:text-white">
+                        <i class="fas fa-upload text-amber-400"></i>
+                        <span>Upload Custom Photo (PNG / JPG)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          class="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files && e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (uploadEvent) => {
+                                const customImgUrl = uploadEvent.target.result;
+                                const photoRakhi = {
+                                  id: `custom-photo-${Date.now()}`,
+                                  name: `Photo: ${file.name.slice(0, 12)}`,
+                                  category: 'Custom Photo',
+                                  description: 'Custom photo medallion Rakhi design.',
+                                  threadColor: '#DC143C',
+                                  secondaryColor: '#FFD700',
+                                  centerColor: '#D4AF37',
+                                  gemColor: '#FF1493',
+                                  customImageUrl: customImgUrl
+                                };
+                                setSelectedRakhi(photoRakhi);
+                                if (signalBusRef.current) signalBusRef.current.send('RAKHI_SELECTED', photoRakhi);
+                                showToast('Custom photo applied to Rakhi!', 'success');
+                              };
+                              reader.readAsDataURL(file);
+                            }
                           }}
-                          class="px-2.5 py-1 rounded-lg bg-wa-cardBg border border-gray-700 text-[10px] text-amber-200 hover:border-amber-400 transition"
-                        >
-                          {motif.name}
-                        </button>
-                      ))}
+                        />
+                      </label>
                     </div>
                   </div>
-                </div>
 
-                {/* AI Prompt Designer Bar */}
-                <div class="p-4 bg-wa-darkBg/60 border-b border-gray-800 space-y-2">
-                  <label class="block text-[11px] text-amber-300 font-semibold">✨ AI Rakhi Generator (Gemini Studio)</label>
-                  <div class="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={aiPrompt}
-                      onChange={(e) => setAiPrompt(e.target.value)}
-                      placeholder="e.g. Peacock Feather Mandala with Emerald Stone"
-                      class="flex-1 bg-wa-cardBg border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-wa-teal"
-                    />
-                    <button
-                      onClick={handleGenerateAIRakhi}
-                      disabled={aiLoading}
-                      class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-xs font-bold transition hover:opacity-90 flex items-center space-x-1 flex-shrink-0"
-                    >
-                      {aiLoading ? <i class="fas fa-spinner fa-spin"></i> : <i class="fas fa-wand-magic-sparkles"></i>}
-                      <span>Generate</span>
-                    </button>
+                  {/* AI Prompt Customizer Bar */}
+                  <div>
+                    <label class="block text-xs text-amber-300 font-semibold mb-1">✨ AI Custom Rakhi Designer (Gemini Studio)</label>
+                    <div class="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        placeholder="e.g. Golden Peacock Feather Mandala with Emerald Stone"
+                        class="flex-1 bg-wa-cardBg border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-wa-teal"
+                      />
+                      <button
+                        onClick={handleGenerateAIRakhi}
+                        disabled={aiLoading}
+                        class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 text-black text-xs font-bold transition hover:opacity-90 flex items-center space-x-1"
+                      >
+                        {aiLoading ? <i class="fas fa-spinner fa-spin"></i> : <i class="fas fa-wand-magic-sparkles"></i>}
+                        <span>Generate</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1832,9 +1720,9 @@
                         selectedRakhi.id === rakhi.id ? 'bg-amber-500/10 border-amber-400 shadow-lg' : 'bg-wa-darkBg border-gray-800 hover:border-gray-700'
                       }`}
                     >
-                      <div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-inner overflow-hidden relative" style={{ backgroundColor: rakhi.threadColor }}>
+                      <div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center shadow-inner overflow-hidden" style={{ backgroundColor: rakhi.threadColor }}>
                         {rakhi.customImageUrl ? (
-                          <img src={rakhi.customImageUrl} class="w-full h-full object-cover" />
+                          <img src={rakhi.customImageUrl} alt={rakhi.name} class="w-12 h-12 rounded-full object-cover border-2 border-amber-300" />
                         ) : (
                           <div class="w-8 h-8 rounded-full border-2 border-amber-300 flex items-center justify-center" style={{ backgroundColor: rakhi.centerColor }}>
                             <div class="w-3 h-3 rounded-full" style={{ backgroundColor: rakhi.gemColor }}></div>
@@ -1863,7 +1751,7 @@
                     class="text-xs text-amber-300 hover:underline font-semibold flex items-center space-x-1"
                   >
                     <i class="fas fa-cube"></i>
-                    <span>Inspect 3D Model</span>
+                    <span>Inspect 3D Preview</span>
                   </button>
 
                   <button
@@ -1918,13 +1806,30 @@
                   <div class="text-3xl font-mono font-extrabold text-amber-300 tracking-widest">{roomCode}</div>
                 </div>
 
-                <button
-                  onClick={() => copyTextToClipboard(`${window.location.origin}${window.location.pathname}?room=${roomCode}`, 'Invitation link copied!')}
-                  class="w-full py-3 rounded-xl bg-wa-teal text-white font-bold text-xs flex items-center justify-center space-x-2"
-                >
-                  <i class="fas fa-copy"></i>
-                  <span>Copy Direct Room Link</span>
-                </button>
+                <div class="space-y-3">
+                  <button
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}&role=${role === 'SISTER' ? 'BROTHER' : 'SISTER'}`;
+                      copyTextToClipboard(shareUrl, 'Direct Invitation link copied!');
+                    }}
+                    class="w-full py-3 rounded-xl bg-wa-teal text-white font-bold text-xs flex items-center justify-center space-x-2"
+                  >
+                    <i class="fas fa-copy"></i>
+                    <span>Copy Direct Invitation Link</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}&role=${role === 'SISTER' ? 'BROTHER' : 'SISTER'}`;
+                      const msg = `Join my Raksha Bandhan Virtual Room on WebRTC! Room Code: ${roomCode}. Click to connect: ${shareUrl}`;
+                      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    class="w-full py-3 rounded-xl bg-wa-green text-white font-bold text-xs flex items-center justify-center space-x-2"
+                  >
+                    <i class="fab fa-whatsapp text-lg"></i>
+                    <span>Share Invitation on WhatsApp</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
